@@ -5,3 +5,5 @@ mouseZoom.c
 inputBox.c
 *.exe
 *MultiplayerOnline.c
+*.kra
+*.kra~

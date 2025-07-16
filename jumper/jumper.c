@@ -5,15 +5,21 @@
 #define SCREEN_WIDTH 800
 #define SCREEN_HEIGHT 450
 #define FLOOR_Y 320
-#define PLAYER_WIDTH 20
-#define PLAYER_HEIGHT 40
 #define GRAVITY 250 //px/sec^2
-#define INITIAL_VELOCITY -220 // px/sec
-#define MAX_ENEMIES 6
-#define ENEMY_HEIGHT 30
-#define ENEMY_INITIAL_X 900
 
-typedef enum { TITLE = 0, GAMEPLAY } GameScreen;
+#define PLAYER_WIDTH 20
+#define PLAYER_HEIGHT 30
+#define INITIAL_Y_VELOCITY -220 // px/sec
+#define PLAYER_INITIAL_Y_POS ( FLOOR_Y - PLAYER_HEIGHT )
+
+#define MAX_ENEMIES 6
+#define ENEMY_HEIGHT 20
+#define ENEMY_INITIAL_X ( SCREEN_WIDTH + 10 )
+#define ENEMY_WIDTH_RANGE 10
+#define ENEMY_SPEED_RANGE 4
+#define EMENY_Y_POS ( FLOOR_Y - ENEMY_HEIGHT )
+
+typedef enum { TITLE, GAMEPLAY } GameScreen;
 
 typedef enum { SINGLE_PLAYER, TWO_PLAYER } PlayerMode;
 
@@ -33,8 +39,6 @@ typedef struct {
   float speed;
 } EnemyRectangle;
 
-static float defaultPlayerYPos = FLOOR_Y - PLAYER_HEIGHT;
-static float enemyYPos = FLOOR_Y - ENEMY_HEIGHT;
 
 void doJumpLogic(PlayerRectangle *player, Sound *jumpSound, bool jumpKeyPressed){   
   if (jumpKeyPressed && !player->isjumping){
@@ -45,9 +49,9 @@ void doJumpLogic(PlayerRectangle *player, Sound *jumpSound, bool jumpKeyPressed)
   
   if(player->isjumping){
     float sec = player->secondsInAir;
-    player->rec.y = ((INITIAL_VELOCITY*sec) + (0.5*GRAVITY*sec*sec)) + defaultPlayerYPos;
-    if(player->rec.y > defaultPlayerYPos){
-      player->rec.y = defaultPlayerYPos;
+    player->rec.y = ((INITIAL_Y_VELOCITY*sec) + (0.5*GRAVITY*sec*sec)) + PLAYER_INITIAL_Y_POS;
+    if(player->rec.y > PLAYER_INITIAL_Y_POS){
+      player->rec.y = PLAYER_INITIAL_Y_POS;
       player->isjumping = false;
     }
     else player->secondsInAir += (1.0/60.0);
@@ -64,13 +68,13 @@ void maybeGoRight(PlayerRectangle *player){
     player->rec.x += 2;
 }
 
-void setEnemyObject(EnemyRectangle **enemy){
+void setEnemyObject(EnemyRectangle **enemy, float minimumWidth, float minimumSpeed){
   *enemy = malloc(sizeof(EnemyRectangle));
   (**enemy).x = ENEMY_INITIAL_X;
-  (**enemy).y = enemyYPos;
-  (**enemy).width = (float) GetRandomValue(20, 50);
+  (**enemy).y = EMENY_Y_POS;
+  (**enemy).width = (( ((float) rand()) / (float) RAND_MAX) * ENEMY_WIDTH_RANGE) + minimumWidth;
   (**enemy).height = ENEMY_HEIGHT;
-  (**enemy).speed = (( ((float) rand()) / (float) RAND_MAX)*6) + 1;
+  (**enemy).speed = (( ((float) rand()) / (float) RAND_MAX) * ENEMY_SPEED_RANGE) + minimumSpeed;
 }
 
 bool playerEnemyOverlap(PlayerRectangle *player, EnemyRectangle **enemy){
@@ -88,9 +92,13 @@ bool playerEnemyOverlap(PlayerRectangle *player, EnemyRectangle **enemy){
 }
 
 void updateScoreText(float score, int x, int y, Color c){
+  static float highestScore = 0;
   char scoreStr[15];
+  if (score > highestScore) highestScore = score;
   sprintf(scoreStr, "Score: %d", (int) (score*100));
   DrawText(scoreStr, x, y, 20, c);
+  sprintf(scoreStr, "Highest: %d", (int) (highestScore*100));
+  DrawText(scoreStr, x, y+20, 20, c);
 }
 
 void drawEnemyRectangles(EnemyRectangle **enemies){
@@ -117,20 +125,26 @@ int main(void) {
   
   const Rectangle floorRec = {0, FLOOR_Y, SCREEN_WIDTH, SCREEN_HEIGHT-FLOOR_Y};
   const int defaultXPos = (SCREEN_WIDTH-PLAYER_WIDTH)/2;
-  const PlayerRectangle player1Default = { RED, { defaultXPos, defaultPlayerYPos, PLAYER_WIDTH, PLAYER_HEIGHT }, false, 0.0, false};
-  const PlayerRectangle player2Default = { BLUE, { defaultXPos, defaultPlayerYPos, PLAYER_WIDTH, PLAYER_HEIGHT }, false, 0.0, false};
-  PlayerRectangle player1 = player1Default;
-  PlayerRectangle player2 = player2Default;
+  const PlayerRectangle player1Default = { RED, { defaultXPos, PLAYER_INITIAL_Y_POS, PLAYER_WIDTH, PLAYER_HEIGHT }, false, 0.0, false};
+  const PlayerRectangle player2Default = { BLUE, { defaultXPos, PLAYER_INITIAL_Y_POS, PLAYER_WIDTH, PLAYER_HEIGHT }, false, 0.0, false};
+  PlayerRectangle player1;
+  PlayerRectangle player2;
   EnemyRectangle *enemies[MAX_ENEMIES];
-  for (int i = 0; i < MAX_ENEMIES; i++) enemies[i] = NULL;
-  float score = 0.0;
+  float minimumEnemyWidth;
+  float minimumEnemySpeed;
+  float score;
   
+  Texture2D backgroundImg = LoadTexture("resources/background.png");
   Sound jumpSound = LoadSound("resources/jump.mp3");
   Sound loseSound = LoadSound("resources/lost.mp3");
 
   while (!WindowShouldClose()){
     BeginDrawing();
+
     ClearBackground(RAYWHITE);
+    DrawRectangleRec(floorRec, DARKGRAY);
+    DrawTexture(backgroundImg, -15, FLOOR_Y - backgroundImg.height, WHITE);
+
     switch(currentScreen){
       case GAMEPLAY: {
         doJumpLogic(&player1, &jumpSound, IsKeyDown(KEY_W));
@@ -145,7 +159,9 @@ int main(void) {
 
         for (int i = 0; i < MAX_ENEMIES; i++) {
           if (!enemies[i]) {
-            setEnemyObject(&(enemies[i]));
+            minimumEnemyWidth += 0.5;
+            minimumEnemySpeed += 0.1;
+            setEnemyObject(&(enemies[i]), minimumEnemyWidth, minimumEnemySpeed);
             continue;
           }
 
@@ -165,7 +181,7 @@ int main(void) {
             break;
           }
           
-          if(enemies[i]->x < -100){
+          if(enemies[i]->x + enemies[i]->width < 0){
             free(enemies[i]);
             enemies[i] = NULL;
           }
@@ -179,7 +195,7 @@ int main(void) {
         DrawText("Press T to play in Two player mode", 180, 160, 20, DARKGREEN);
         
         if (score) {
-          updateScoreText(score, 180, 80, BLACK);
+          updateScoreText(score, 180, 60, BLACK);
           if (playerMode == TWO_PLAYER) {
             if (player1.won) DrawText("Player 1 wins", 180, 40, 20, player1.color);
             else DrawText("Player 2 wins", 180, 40, 20, player2.color);
@@ -188,20 +204,22 @@ int main(void) {
 
         if (IsKeyPressed(KEY_S)){
           playerMode = SINGLE_PLAYER;
-          currentScreen = GAMEPLAY;
-          //init player and enemies
           player1 = player1Default;
           score = 0.0;
           for (int i = 0; i < MAX_ENEMIES; i++) enemies[i] = NULL;
+          minimumEnemyWidth = 20.0;
+          minimumEnemySpeed = 0.5;
+          currentScreen = GAMEPLAY;
         }
         else if (IsKeyPressed(KEY_T)){
           playerMode = TWO_PLAYER;
-          currentScreen = GAMEPLAY;
-          //init player and enemies
           player1 = player1Default;
           player2 = player2Default;
           score = 0.0;
           for (int i = 0; i < MAX_ENEMIES; i++) enemies[i] = NULL;
+          minimumEnemyWidth = 20.0;
+          minimumEnemySpeed = 0.5;
+          currentScreen = GAMEPLAY;
         }
 
       } break;
@@ -212,12 +230,12 @@ int main(void) {
     if (playerMode == TWO_PLAYER) DrawRectangleRec(player2.rec, player2.color);
     DrawRectangleRec(player1.rec, player1.color);
     drawEnemyRectangles(enemies);
-    DrawRectangleRec(floorRec, DARKGRAY);
     EndDrawing();
   }
 
-  UnloadSound(jumpSound);
   UnloadSound(loseSound);
+  UnloadSound(jumpSound);
+  UnloadTexture(backgroundImg);
 
   CloseAudioDevice();
   CloseWindow();
